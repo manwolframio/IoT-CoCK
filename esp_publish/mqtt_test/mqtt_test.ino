@@ -5,50 +5,45 @@
 #include <Adafruit_NeoPixel.h>  // Librería para LED direccionable
 
 // Configuración WiFi
-const char WIFI_SSID[] = "LE-34";     
-const char WIFI_PASSWORD[] = "mpls1234";  
+const char wifi_ssid[] = "LRSS";     
+const char wifi_password[] = "LRSS-uah-8342";  
 
 // Configuración MQTT
-const char MQTT_BROKER_ADDRESS[] = "192.168.205.2";  
-const int MQTT_PORT = 1883;
-const char MQTT_CLIENT_ID[] = "sensor:heartrate:001";  
+const char mqtt_broker_address[] = "192.168.190.13";  
+const int mqtt_port = 1883;
+const char mqtt_client_id[] = "sensor:temperature:001";  
 
-// Topics MQTT generados dinámicamente
-const char SENSOR_ID[] = "sensor:heartrate:001";  
+// ID del sensor y paciente
+const char sensor_id[] = "sensor:temperature:001";  
+const char patient_id[] = "001"; // Se debe definir
 
-const char TOPIC_MEDIDA[] = "sensors/sensor:heartrate:001/medida"; 
-const char TOPIC_STATUS[] = "sensors/sensor:heartrate:001/status";  
 
-const int PUBLISH_INTERVAL = 5000;  
+const int publish_interval = 500;  
 
 WiFiClient network;
 MQTTClient mqtt(256);
-unsigned long lastPublishTime = 0;
+unsigned long last_publish_time = 0;
 
-// Configuración del LED addressable
+// Configuración del LED direccionable
 #define LED_PIN 48  // Ajusta según tu ESP32-S3
 #define NUM_LEDS 1  // Número de LEDs en la tira
 Adafruit_NeoPixel led = Adafruit_NeoPixel(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+int colors[] = {1, 0, 0}; // Inicialmente en rojo (no conectado)
 
 // NTP
-const char* NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET = -18000; // UTC-5 (ajusta según zona horaria)
-const int DAYLIGHT_OFFSET = 3600; 
-
-int colors[] = {255,0,0};
+const char* ntp_server = "pool.ntp.org";
+const long gmt_offset = -18000; // UTC-5 (ajusta según zona horaria)
+const int daylight_offset = 3600; 
 
 void setup() {
   Serial.begin(115200);
-
-  // Configurar LED
   led.begin();
   led.show();  // Apagar LED al inicio
-
   setLedColor();  // Rojo (no conectado)
 
   // Conexión WiFi
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(wifi_ssid, wifi_password);
   Serial.print("ESP32 - Conectando a Wi-Fi");
   
   while (WiFi.status() != WL_CONNECTED) {
@@ -58,53 +53,52 @@ void setup() {
   Serial.println("\nWi-Fi Conectado!");
 
   // Sincronizar hora con NTP
-  configTime(GMT_OFFSET, DAYLIGHT_OFFSET, NTP_SERVER);
+  configTime(gmt_offset, daylight_offset, ntp_server);
   Serial.println("Sincronizando con NTP...");
-  while (!timeSynced()) {
+  while (!time_synced()) {
     Serial.print(".");
     delay(500);
   }
   Serial.println("\nHora sincronizada!");
 
   // Conectar a MQTT
-  connectToMQTT();
+  if (connect_to_mqtt(mqtt_client_id, mqtt_broker_address, mqtt_port, network) > 0) {
+    Serial.println("\nESP32 - Error al conectar con MQTT!");
+  } else {
+    Serial.println("\nESP32 - Conectado a MQTT!");
+    colors[0] = 0; colors[1] = 1; colors[2] = 0;  // Verde (conectado)
+    setLedColor();
+  }
 }
 
 void loop() {
   mqtt.loop();
 
-  if (millis() - lastPublishTime > PUBLISH_INTERVAL) {
-    sendToMQTT();
-    lastPublishTime = millis();
+  if (millis() - last_publish_time > publish_interval) {
+    send_to_mqtt("temperature", 50.0);
+    last_publish_time = millis();
   }
 }
 
-void connectToMQTT() {
-  mqtt.begin(MQTT_BROKER_ADDRESS, MQTT_PORT, network);
+int connect_to_mqtt(const char* client_id, const char* broker_address, int port, WiFiClient& net) {
+  mqtt.begin(broker_address, port, net);
   Serial.print("ESP32 - Conectando a MQTT");
 
-  while (!mqtt.connect(MQTT_CLIENT_ID)) {
+  while (!mqtt.connect(client_id)) {
     Serial.print(".");
     delay(100);
   }
 
-  if (!mqtt.connected()) {
-    Serial.println("\nESP32 - Error al conectar con MQTT!");
-    return;
+  if (!mqtt.connected()) {    
+    return -1;
   }
-
-  Serial.println("\nESP32 - Conectado a MQTT!");
-  colors[0] = 0;
-  colors[1] = 255;
-  colors[2] = 0;
-  setLedColor(); // Verde (conectado) 
+  return 0;
 }
 
-void sendToMQTT() {
-  int pre_colors[3];
-  pre_colors[0] = colors[0];
-  pre_colors[1] = colors[1];
-  pre_colors[2] = colors[2];
+void send_to_mqtt(const char* measurement, float value) {
+  int pre_colors[3] = {colors[0], colors[1], colors[2]};
+  colors[0] = 0; colors[1] = 0; colors[2] = 1;  // Azul (enviando datos)
+  setLedColor();
 
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
@@ -115,60 +109,38 @@ void sendToMQTT() {
   char timestamp[30];
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeinfo);
 
-  int sensorValue = 50; 
-
-  // Publicar estado con "retain" activado
-  StaticJsonDocument<200> statusMsg;
-  statusMsg["timestamp"] = timestamp;
-  statusMsg["status"] = 1;
-  char statusBuffer[512];
+  StaticJsonDocument<200> mqtt_msg;
+  mqtt_msg["timestamp"] = timestamp;
+  mqtt_msg["sensor_status"] = 1;
+  mqtt_msg["zone"] = 1;
+  mqtt_msg["value"] = value;
+  mqtt_msg["priority"] = 0;
   
-  // Verificar la serialización de statusMsg
-  serializeJson(statusMsg, statusBuffer);
+  char msg_buffer[1024];
+  serializeJson(mqtt_msg, msg_buffer);
   Serial.println("Estado serializado:");
-  Serial.println(statusBuffer);  // Ver el contenido serializado antes de publicar
 
-  mqtt.publish(TOPIC_STATUS, statusBuffer);  // Con retain activado
-
-  // Publicar medida con "retain" activado
-  StaticJsonDocument<200> measureMsg;
-  measureMsg["timestamp"] = timestamp;
-  measureMsg["value"] = sensorValue;
-  char measureBuffer[512];
+  char topic[200];
+  sprintf(topic, "uci/patients/patient-%s/%s/1", patient_id, measurement);
   
-  // Verificar la serialización de measureMsg
-  serializeJson(measureMsg, measureBuffer);
-  Serial.println("Medida serializada:");
-  Serial.println(measureBuffer);  // Ver el contenido serializado antes de publicar
-
-  mqtt.publish(TOPIC_MEDIDA, measureBuffer);  // Con retain activado
-
+  mqtt.publish(topic, msg_buffer);
   Serial.println("ESP32 - Datos enviados a MQTT:");
-  Serial.print("- Estado: "); Serial.println(statusBuffer);
-  Serial.print("- Medida: "); Serial.println(measureBuffer);
+  Serial.print("- Estado: "); Serial.println(msg_buffer);
 
-  colors[0] = 0;
-  colors[1] = 0;
-  colors[2] = 255;
-  setLedColor(); // Verde (conectado)
   delay(250);
-  colors[0] = pre_colors[0];
-  colors[1] = pre_colors[1];
-  colors[2] = pre_colors[2];
-  setLedColor(); // Verde (conectado)
-
-
-
+  colors[0] = pre_colors[0]; colors[1] = pre_colors[1]; colors[2] = pre_colors[2];  // Restaurar color anterior
+  setLedColor();
 }
 
 // Función para cambiar color del LED RGB
 void setLedColor() {
-  led.setPixelColor(0, led.Color(colors[0], colors[1], colors[2]));  // Cambiar color del primer LED
+  led.setPixelColor(0, led.Color(colors[0], colors[1], colors[2]));  
   led.show();
 }
 
 // Verifica si la hora ha sido sincronizada con NTP
-bool timeSynced() {
+bool time_synced() {
   struct tm timeinfo;
   return getLocalTime(&timeinfo);
 }
+
