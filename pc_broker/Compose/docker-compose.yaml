@@ -1,0 +1,139 @@
+version: "3.8"
+
+services:
+  emqx:
+    image: emqx/emqx
+    container_name: emqx
+    restart: always
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8084:8084"
+      - "18083:18083"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-logs:/opt/emqx/log
+    environment:
+      EMQX_NAME: emqx
+      EMQX_ALLOW_ANONYMOUS: "true"
+      EMQX_DASHBOARD__DEFAULT_USERNAME: "iot"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "iot"
+      EMQX_AUTH__USER__1__USERNAME: "iot-user"
+      EMQX_AUTH__USER__1__PASSWORD: "iot"
+    networks:
+      - mi_red
+
+  influxdb1:
+    image: influxdb:1.8.10
+    container_name: influxdb1
+    restart: always
+    ports:
+      - "8087:8086"
+    environment:
+      - INFLUXDB_DB=mi_base
+      - INFLUXDB_ADMIN_USER=iot
+      - INFLUXDB_ADMIN_PASSWORD=iot
+      - INFLUXDB_USER=iot-user
+      - INFLUXDB_PASSWORD=iot
+      - INFLUXDB_HTTP_FLUX_ENABLED=true
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_HTTP_HTTPS_ENABLED=true
+      - INFLUXDB_HTTP_BIND_ADDRESS=:8086
+      - INFLUXDB_HTTP_HTTPS_CERTIFICATE=/etc/ssl/influxdb1.crt
+      - INFLUXDB_HTTP_HTTPS_PRIVATE_KEY=/etc/ssl/influxdb1.key
+    volumes:
+      - influxdb_data1:/var/lib/influxdb
+      - ./certs/influxdb1.crt:/etc/ssl/influxdb1.crt:ro
+      - ./certs/influxdb1.key:/etc/ssl/influxdb1.key:ro
+    networks:
+      - mi_red
+
+  influxdb2:
+    image: influxdb:1.8.10
+    container_name: influxdb2
+    restart: always
+    ports:
+      - "8088:8086"
+    environment:
+      - INFLUXDB_DB=mi_base
+      - INFLUXDB_ADMIN_USER=iot
+      - INFLUXDB_ADMIN_PASSWORD=iot
+      - INFLUXDB_USER=iot-user
+      - INFLUXDB_PASSWORD=iot
+      - INFLUXDB_HTTP_FLUX_ENABLED=true
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_HTTP_HTTPS_ENABLED=true
+      - INFLUXDB_HTTP_BIND_ADDRESS=:8086
+      - INFLUXDB_HTTP_HTTPS_CERTIFICATE=/etc/ssl/influxdb2.crt
+      - INFLUXDB_HTTP_HTTPS_PRIVATE_KEY=/etc/ssl/influxdb2.key
+    volumes:
+      - influxdb_data2:/var/lib/influxdb
+      - ./certs/influxdb2.crt:/etc/ssl/influxdb2.crt:ro
+      - ./certs/influxdb2.key:/etc/ssl/influxdb2.key:ro
+    networks:
+      - mi_red
+
+  nginx_balancer:
+    image: nginx:latest
+    container_name: nginx_balancer
+    restart: always
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./nginx_balancer.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/nginx.crt:/etc/nginx/certs/nginx.crt:ro
+      - ./certs/nginx.key:/etc/nginx/certs/nginx.key:ro
+    depends_on:
+      - influxdb1
+      - influxdb2
+    networks:
+      - mi_red
+
+  nginx_gateway:
+    image: nginx:latest
+    container_name: nginx_gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx_gateway.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/nginx.crt:/etc/nginx/certs/nginx.crt:ro
+      - ./certs/nginx.key:/etc/nginx/certs/nginx.key:ro
+    depends_on:
+      - emqx
+      - grafana
+      - influxdb1
+      - influxdb2
+    networks:
+      - mi_red
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=iot
+      - GF_SECURITY_ADMIN_PASSWORD=iot
+      - GF_SERVER_ROOT_URL=/grafana/
+      - GF_SERVER_SERVER_FORM_SUB_PATH=true
+    depends_on:
+      - nginx_balancer
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - mi_red
+
+networks:
+  mi_red:
+    driver: bridge
+
+volumes:
+  emqx-data:
+  emqx-logs:
+  influxdb_data1:
+  influxdb_data2:
+  grafana_data:
+
