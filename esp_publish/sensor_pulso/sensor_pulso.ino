@@ -18,7 +18,7 @@ void setup() {
 
 void loop() {
   static float* hb;  
-  hb = heartbeatAquire(particleSensor);
+  hb = heartbeatAcquire(particleSensor);
   if(hb[0] >= 0) {
     Serial.print("Latido detectado! BPM: ");
     Serial.println(hb[0]);

@@ -1,7 +1,7 @@
 #include "HeartSensor.h"
 
 
-int heartSensorInit(MAX30105 particleSensor,int sdaPin, int sclPin) {
+int heartSensorInit(MAX30105 &particleSensor,int sdaPin, int sclPin) {
     Wire.begin(sdaPin, sclPin); // Inicializar I2C con pines personalizados
     if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
         Serial.println("No se detectó el MAX30105. Verifica las conexiones.");
@@ -13,7 +13,7 @@ int heartSensorInit(MAX30105 particleSensor,int sdaPin, int sclPin) {
     return 1;
 }
 
-float* heartbeatAquire(MAX30105 particleSensor) {
+float* heartbeatAcquire(MAX30105 &particleSensor) {
     float heartbeat[2] = {};
     static byte rates[4] = {};
     static long lastBeat = 0;
