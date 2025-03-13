@@ -1,5 +1,5 @@
 #include <Wire.h>
-#include "MAX30105.h" // Asegúrate de incluir la librería MAX30105
+#include "MAX30105.h"
 
 MAX30105 particleSensor;
 
