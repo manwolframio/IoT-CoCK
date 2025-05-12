@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   emqx:
@@ -21,7 +20,8 @@ services:
       EMQX_AUTH__USER__1__USERNAME: "iot-user"
       EMQX_AUTH__USER__1__PASSWORD: "iot"
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.2  # IP fija para emqx
 
   influxdb1:
     image: influxdb:1.8.10
@@ -46,7 +46,8 @@ services:
       - ./certs/influxdb1.crt:/etc/ssl/influxdb1.crt:ro
       - ./certs/influxdb1.key:/etc/ssl/influxdb1.key:ro
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.3  # IP fija para influxdb1
 
   influxdb2:
     image: influxdb:1.8.10
@@ -71,7 +72,8 @@ services:
       - ./certs/influxdb2.crt:/etc/ssl/influxdb2.crt:ro
       - ./certs/influxdb2.key:/etc/ssl/influxdb2.key:ro
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.4  # IP fija para influxdb2
 
   nginx_balancer:
     image: nginx:latest
@@ -87,7 +89,8 @@ services:
       - influxdb1
       - influxdb2
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.5  # IP fija para nginx_balancer
 
   nginx_gateway:
     image: nginx:latest
@@ -106,7 +109,8 @@ services:
       - influxdb1
       - influxdb2
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.6  # IP fija para nginx_gateway
 
   grafana:
     image: grafana/grafana:latest
@@ -124,11 +128,15 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
-      - mi_red
+      mi_red:
+        ipv4_address: 172.20.0.7  # IP fija para grafana
 
 networks:
   mi_red:
     driver: bridge
+    ipam:
+      config:
+        - subnet: "172.20.0.0/16"  # Definir un rango de IP para la red
 
 volumes:
   emqx-data:

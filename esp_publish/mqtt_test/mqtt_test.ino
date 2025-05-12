@@ -6,12 +6,12 @@
 
 // Configuración WiFi
 
-const char wifi_ssid[] = "LRSS";     
-const char wifi_password[] = "LRSS-uah-8342";  
+const char wifi_ssid[] = "rs3lab";     
+const char wifi_password[] = "12345678";  
 
 // Configuración MQTT
 
-const char mqtt_broker_address[] = "192.168.190.13";  
+const char mqtt_broker_address[] = "10.42.0.191";  
 const int mqtt_port = 1883;
 const char mqtt_client_id[] = "sensor:temperature:001";  
 
@@ -108,4 +108,3 @@ bool time_synced() {
   struct tm timeinfo;
   return getLocalTime(&timeinfo);
 }
-

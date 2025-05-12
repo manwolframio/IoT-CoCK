@@ -15,12 +15,12 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # Configuración del broker MQTT
-MQTT_BROKER = "192.168.190.13"
+MQTT_BROKER = "192.168.205.193"
 MQTT_PORT = 1883
 MQTT_TOPIC = "uci/patients/#"
 
 # Configuración de InfluxDB con HTTPS
-INFLUXDB_HOST = "192.168.190.13"  # Cambia esto si tu servidor está en otro host
+INFLUXDB_HOST = "192.168.205.193"  # Cambia esto si tu servidor está en otro host
 INFLUXDB_PORT = 8086  # Asegúrate de que este puerto está habilitado para HTTPS
 INFLUXDB_USER = "iot"
 INFLUXDB_PASSWORD = "iot"
@@ -72,24 +72,34 @@ start_mqtt()
 # Función para convertir el mensaje en formato InfluxDB
 def convert_to_influx(topic, message):
     try:
-        # Descomponer el tópico: /uci/patients/<patient_id>/<sensor_measure>/<sensor_zone>/
+        # Descomponer el tópico: /uci/patients/patient-<id>/<measurement>/<zone>
         parts = topic.split("/")
         if len(parts) < 5:
             print(f"Topic inválido: {topic}")
             return None
-        
-        patient_id = parts[2]   # Extraer el patient_id
-        sensor_measure = parts[3]  # Tipo de medida (ej: heartrate)
-        sensor_zone = parts[4]  # Zona del cuerpo (ej: wrist, chest)
+
+        raw_patient_id = parts[2]  # Ej: "patient-001"
+        patient_id = raw_patient_id.replace("patient-", "")  # Solo "001"
+        sensor_measure = parts[3]  # Ej: "heartbeat"
+        zone_code = parts[4]       # Ej: "1"
+
+        # Convertir número de zona a texto (según lo definido en tu código C++)
+        zone_map = {
+            "1": "wrist",
+            "2": "chest"
+        }
+        sensor_zone = zone_map.get(zone_code, "unknown")
 
         # Convertir el mensaje JSON a un diccionario
         data = json.loads(message)
 
-        # Extraer campos del JSON
-        timestamp = data.get("timestamp", "")
-        sensor_status = data.get("sensor_status", "unknown")
-        sensor_value = float(data.get("value", 0.0))
-        sensor_priority = int(data.get("priority", 0))
+        # Extraer y formatear campos
+        raw_status = data.get("sensor_status", 0)
+        sensor_status = "ok" if raw_status == 1 else "fail"
+
+        # Formatear timestamp a ISO si viene en formato distinto
+        raw_timestamp = data.get("timestamp", "")
+        timestamp = raw_timestamp.replace(" ", "T") + "Z" if "T" not in raw_timestamp else raw_timestamp
 
         # Crear estructura de InfluxDB
         influx_data = [
@@ -99,11 +109,11 @@ def convert_to_influx(topic, message):
                     "patient_id": patient_id,
                     "sensor_status": sensor_status,
                     "sensor_measure": sensor_measure,
-                    "sensor_priority": sensor_priority,
+                    "sensor_priority": int(data.get("priority", 0)),
                     "sensor_zone": sensor_zone
                 },
                 "fields": {
-                    "sensor_measurement": sensor_value
+                    "sensor_measurement": float(data.get("value", 0.0))
                 },
                 "time": timestamp
             }
@@ -114,6 +124,7 @@ def convert_to_influx(topic, message):
     except Exception as e:
         print(f"Error generando datos para InfluxDB: {e}")
         return None
+
 
 # Bucle principal utilizando select
 while True:

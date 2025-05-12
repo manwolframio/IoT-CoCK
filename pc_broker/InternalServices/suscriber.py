@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 import json  # Importar el módulo json para procesar el payload como JSON
 # Dirección del broker y puerto
-BROKER_HOST = "192.168.190.13"  # IP del broker
+BROKER_HOST = "192.168.188.236"  # IP del broker
 BROKER_PORT = 1883         # Puerto por defecto para MQTT
 
 # El ID del cliente

@@ -19,12 +19,12 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Configuración del broker MQTT
-MQTT_BROKER = "192.168.190.13"
+MQTT_BROKER = "10.42.0.191"
 MQTT_PORT = 1883
 MQTT_TOPIC = "uci/patients/#"
 
 # Configuración de InfluxDB con HTTPS
-INFLUXDB_HOST = "192.168.190.13"  # Cambia esto si tu servidor está en otro host
+INFLUXDB_HOST = "10.42.0.191"  # Cambia esto si tu servidor está en otro host
 INFLUXDB_PORT = 8086  # Asegúrate de que este puerto está habilitado para HTTPS
 INFLUXDB_USER = "iot"
 INFLUXDB_PASSWORD = "iot"

@@ -1,7 +1,39 @@
 #include "HeartSensor.h"
 
+const char wifi_ssid[] = "LRSS";     
+const char wifi_password[] = "LRSS-uah-8342";  
+const char mqtt_broker_address[] = "192.168.188.225";  
+const int mqtt_port = 1883;
+const char mqtt_client_id[] = "sensor:heartrate:001";  
+const char patient_id[] = "001";
+float hb[2];
+long lastPrint = 0;
 
-int heartSensorInit(MAX30105 &particleSensor,int sdaPin, int sclPin) {
+WiFiClient network;
+MQTTClient mqtt(256);
+
+
+
+void initializeWiFi() {
+  WiFi.begin(wifi_ssid, wifi_password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Conectando a WiFi...");
+  }
+  Serial.println("Conectado a WiFi");
+}
+
+void initializeMQTT() {
+  mqtt.begin(mqtt_broker_address, mqtt_port, network);
+  while (!mqtt.connect(mqtt_client_id)) {
+    delay(1000);
+    Serial.println("Conectando a MQTT...");
+  }
+  Serial.println("Conectado a MQTT");
+}
+
+
+int heartSensorInit(MAX30105 &particleSensor, int sdaPin, int sclPin) {
     Wire.begin(sdaPin, sclPin); // Inicializar I2C con pines personalizados
     if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
         Serial.println("No se detectó el MAX30105. Verifica las conexiones.");
@@ -11,42 +43,4 @@ int heartSensorInit(MAX30105 &particleSensor,int sdaPin, int sclPin) {
     particleSensor.setPulseAmplitudeRed(0x0A);
     particleSensor.setPulseAmplitudeGreen(0);
     return 1;
-}
-
-float* heartbeatAcquire(MAX30105 &particleSensor) {
-    float heartbeat[2] = {};
-    static byte rates[4] = {};
-    static long lastBeat = 0;
-    static byte rateSpot = 0;
-
-    float beatsPerMinute = 0;
-    int beatAvg = 0;
-
-    long irValue = particleSensor.getIR(); // Obtener valor IR del sensor
-
-    if (checkForBeat(irValue)) { // Detectar latido
-        long delta = millis() - lastBeat;
-        lastBeat = millis();
-
-        beatsPerMinute = 60 / (delta / 1000.0);
-        if (beatsPerMinute < 255 && beatsPerMinute > 20) {
-            rates[rateSpot++] = (byte)beatsPerMinute;
-            rateSpot %= 4;
-
-            beatAvg = 0;
-            for (byte x = 0; x < 4; x++) {
-                beatAvg += rates[x];
-            }
-            beatAvg /= 4;
-        }
-        heartbeat[0] = beatsPerMinute;
-        heartbeat[1] = beatAvg;
-
-        return heartbeat;
-    }
-    else{
-        heartbeat[0] = -1;
-        heartbeat[1] = -1;
-        return heartbeat;
-    } 
 }
