@@ -1,5 +1,33 @@
 
 services:
+  mqtt-parser:
+    build:
+      context: ../InfluxDB_parser/
+      dockerfile: Dockerfile
+    container_name: mqtt-parser
+    environment:
+      - MQTT_BROKER=172.20.0.2
+      - MQTT_PORT=8883
+      - MQTT_USER=iot
+      - MQTT_PASSWORD=iot-user
+      - MQTT_TOPIC=uci/patients/#
+      - INFLUXDB_HOST=172.20.0.5
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_USER=iot
+      - INFLUXDB_PASSWORD=iot
+      - INFLUXDB_DATABASE=mi_base
+      - INFLUXDB_SSL=true
+      - INFLUXDB_VERIFY_SSL=false
+    restart: unless-stopped
+    networks:
+      mi_red:
+        ipv4_address: 172.20.0.8
+    depends_on:
+      - emqx
+      - influxdb1
+      - influxdb2
+      - nginx_balancer
+        
   emqx:
     image: emqx/emqx
     container_name: emqx
@@ -8,10 +36,13 @@ services:
       - "1883:1883"
       - "8083:8083"
       - "8084:8084"
+      - "8883:8883"
       - "18083:18083"
     volumes:
       - emqx-data:/opt/emqx/data
       - emqx-logs:/opt/emqx/log
+      - ./authn.yaml:/opt/emqx/etc/authn.yaml
+      - ./certs:/opt/emqx/certs:ro
     environment:
       EMQX_NAME: emqx
       EMQX_ALLOW_ANONYMOUS: "true"
@@ -19,6 +50,9 @@ services:
       EMQX_DASHBOARD__DEFAULT_PASSWORD: "iot"
       EMQX_AUTH__USER__1__USERNAME: "iot-user"
       EMQX_AUTH__USER__1__PASSWORD: "iot"
+      EMQX_LISTENER__SSL__EXTERNAL__ENABLE: "true"
+      EMQX_LISTENER__SSL__EXTERNAL__KEYFILE: "/opt/emqx/certs/eqmx.pem"
+      EMQX_LISTENER__SSL__EXTERNAL__CERTFILE: "/opt/emqx/certs/eqmx.pem"
     networks:
       mi_red:
         ipv4_address: 172.20.0.2  # IP fija para emqx
@@ -126,6 +160,9 @@ services:
     depends_on:
       - nginx_balancer
     volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - grafana_data:/var/lib/grafana
     networks:
       mi_red:

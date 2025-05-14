@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-UCI
+    uid: eelwdwwdhqnswb
+    type: influxdb
+    access: proxy
+    url: https://nginx_balancer:8086
+    database: mi_base
+    user: iot
+    secureJsonData:
+      password: iot
+    jsonData:
+      httpMode: POST
+      version: InfluxQL
+      tlsSkipVerify: true
+

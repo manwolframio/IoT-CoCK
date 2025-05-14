@@ -1,0 +1,117 @@
+{
+  "id": null,
+  "uid": "sensor-data-dashboard-002",
+  "title": "Sensor Data Dashboard",
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "patient_id",
+        "label": "Patient",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "eelwdwwdhqnswb"
+        },
+        "refresh": 1,
+        "query": "SHOW TAG VALUES FROM \"sensor_data\" WITH KEY = \"patient_id\"",
+        "includeAll": true,
+        "multi": false,
+        "sort": 1
+      },
+      {
+        "type": "query",
+        "name": "sensor_measure",
+        "label": "Measure",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "eelwdwwdhqnswb"
+        },
+        "refresh": 1,
+        "query": "SHOW TAG VALUES FROM \"sensor_data\" WITH KEY = \"sensor_measure\"",
+        "includeAll": true,
+        "multi": false,
+        "sort": 1
+      },
+      {
+        "type": "query",
+        "name": "sensor_zone",
+        "label": "Zone",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "eelwdwwdhqnswb"
+        },
+        "refresh": 1,
+        "query": "SHOW TAG VALUES FROM \"sensor_data\" WITH KEY = \"sensor_zone\"",
+        "includeAll": true,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Sensor Measurement Over Time",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "eelwdwwdhqnswb"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "query": "SELECT mean(\"sensor_measurement\") FROM \"sensor_data\" WHERE \"patient_id\" =~ /^$patient_id$/ AND \"sensor_measure\" =~ /^$sensor_measure$/ AND \"sensor_zone\" =~ /^$sensor_zone$/ AND $timeFilter GROUP BY time($__interval) fill(null)"
+        }
+      ],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "barchart",
+      "title": "Measures of Selected Patient",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "eelwdwwdhqnswb"
+      },
+      "targets": [
+        {
+          "refId": "B",
+          "rawQuery": true,
+          "query": "SELECT mean(\"sensor_measurement\") FROM \"sensor_data\" WHERE \"patient_id\" =~ /^$patient_id$/ AND $timeFilter GROUP BY \"sensor_measure\" fill(null)"
+        }
+      ],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "options": {
+        "orientation": "vertical",
+        "showLegend": false,
+        "displayMode": "seriesToColumns",
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"]
+  },
+  "editable": true,
+  "gnetId": null
+}
+

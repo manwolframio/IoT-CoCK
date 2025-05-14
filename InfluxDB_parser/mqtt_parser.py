@@ -1,34 +1,33 @@
 import paho.mqtt.client as mqtt
+import ssl
 import queue
 import time
 import select
 import json
+import os
 from influxdb import InfluxDBClient
 import warnings
 import requests
-
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from datetime import datetime, timedelta
 
-# Deshabilitar el warning de HTTPS sin verificación
 warnings.simplefilter('ignore', InsecureRequestWarning)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+MQTT_BROKER = os.getenv("MQTT_BROKER", "192.168.205.193")
+MQTT_PORT = int(os.getenv("MQTT_PORT", 8883))
+MQTT_USER = os.getenv("MQTT_USER", "iot")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "iot")
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "uci/patients/#")
 
-# Configuración del broker MQTT
-MQTT_BROKER = "192.168.205.193"
-MQTT_PORT = 1883
-MQTT_TOPIC = "uci/patients/#"
+INFLUXDB_HOST = os.getenv("INFLUXDB_HOST", "192.168.205.193")
+INFLUXDB_PORT = int(os.getenv("INFLUXDB_PORT", 8086))
+INFLUXDB_USER = os.getenv("INFLUXDB_USER", "iot")
+INFLUXDB_PASSWORD = os.getenv("INFLUXDB_PASSWORD", "iot")
+INFLUXDB_DATABASE = os.getenv("INFLUXDB_DATABASE", "mi_base")
+INFLUXDB_SSL = os.getenv("INFLUXDB_SSL", "true").lower() == "true"
+VERIFY_SSL = os.getenv("INFLUXDB_VERIFY_SSL", "false").lower() == "true"
 
-# Configuración de InfluxDB con HTTPS
-INFLUXDB_HOST = "192.168.205.193"  # Cambia esto si tu servidor está en otro host
-INFLUXDB_PORT = 8086  # Asegúrate de que este puerto está habilitado para HTTPS
-INFLUXDB_USER = "iot"
-INFLUXDB_PASSWORD = "iot"
-INFLUXDB_DATABASE = "mi_base"
-INFLUXDB_SSL = True  # Habilitar SSL (HTTPS)
-VERIFY_SSL = False  # Cambiar a True si el certificado es válido
-
-# Conectar con InfluxDB usando HTTPS
 influx_client = InfluxDBClient(
     host=INFLUXDB_HOST,
     port=INFLUXDB_PORT,
@@ -39,69 +38,58 @@ influx_client = InfluxDBClient(
     verify_ssl=VERIFY_SSL
 )
 
-# Cola para almacenar los mensajes MQTT
 message_queue = queue.Queue()
 
-# Configurar el cliente MQTT
 mqtt_client = mqtt.Client(client_id="Parser-Global")
 
-# Función que maneja los mensajes recibidos
+mqtt_client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+
+mqtt_client.tls_set(ca_certs=None, certfile=None, keyfile=None,
+                    cert_reqs=ssl.CERT_NONE, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+mqtt_client.tls_insecure_set(True)
+
 def on_message(client, userdata, msg):
     try:
-        topic = msg.topic  # Obtener el tópico del mensaje
-        message = msg.payload.decode()  # Decodificar el mensaje JSON
+        topic = msg.topic
+        message = msg.payload.decode()
         print(f"\nRecibido en [{topic}]: {message}")
-        
-        # Agregar el mensaje a la cola
         message_queue.put((topic, message))
-
     except Exception as e:
         print(f"Error procesando mensaje: {e}")
 
 mqtt_client.on_message = on_message
 
-# Conectar al broker y suscribirse
 def start_mqtt():
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.subscribe(MQTT_TOPIC)
-    mqtt_client.socket().setblocking(False)  # Para usar select sin bloquear
-    print("Suscrito a MQTT")
+    mqtt_client.socket().setblocking(False)
+    print(f"Suscrito a MQTT TLS en {MQTT_BROKER}:{MQTT_PORT} como '{MQTT_USER}'")
 
 start_mqtt()
 
-# Función para convertir el mensaje en formato InfluxDB
 def convert_to_influx(topic, message):
     try:
-        # Descomponer el tópico: /uci/patients/patient-<id>/<measurement>/<zone>
         parts = topic.split("/")
         if len(parts) < 5:
             print(f"Topic inválido: {topic}")
             return None
 
-        raw_patient_id = parts[2]  # Ej: "patient-001"
-        patient_id = raw_patient_id.replace("patient-", "")  # Solo "001"
-        sensor_measure = parts[3]  # Ej: "heartbeat"
-        zone_code = parts[4]       # Ej: "1"
+        raw_patient_id = parts[2]
+        patient_id = raw_patient_id.replace("patient-", "")
+        sensor_measure = parts[3]
 
-        # Convertir número de zona a texto (según lo definido en tu código C++)
-        zone_map = {
-            "1": "wrist",
-            "2": "chest"
-        }
-        sensor_zone = zone_map.get(zone_code, "unknown")
 
-        # Convertir el mensaje JSON a un diccionario
         data = json.loads(message)
+        zone_code = data.get("zone","NULL")
 
-        # Extraer y formatear campos
         raw_status = data.get("sensor_status", 0)
         sensor_status = "ok" if raw_status == 1 else "fail"
 
-        # Formatear timestamp a ISO si viene en formato distinto
-        raw_timestamp = data.get("timestamp", "")
-        timestamp = raw_timestamp.replace(" ", "T") + "Z" if "T" not in raw_timestamp else raw_timestamp
+        raw_timestamp = data.get("timestamp")
 
-        # Crear estructura de InfluxDB
+        # Si no viene, coges UTC actual
+        timestamp_dt = datetime.strptime(raw_timestamp, "%Y-%m-%d %H:%M:%S") - timedelta(hours=2) if raw_timestamp else datetime.utcnow()
+       
         influx_data = [
             {
                 "measurement": "sensor_data",
@@ -110,12 +98,12 @@ def convert_to_influx(topic, message):
                     "sensor_status": sensor_status,
                     "sensor_measure": sensor_measure,
                     "sensor_priority": int(data.get("priority", 0)),
-                    "sensor_zone": sensor_zone
+                    "sensor_zone": zone_code
                 },
                 "fields": {
                     "sensor_measurement": float(data.get("value", 0.0))
                 },
-                "time": timestamp
+                "time": timestamp_dt
             }
         ]
 
@@ -125,24 +113,20 @@ def convert_to_influx(topic, message):
         print(f"Error generando datos para InfluxDB: {e}")
         return None
 
-
-# Bucle principal utilizando select
+# --- Bucle principal ---
 while True:
-    # Usamos select para esperar eventos en el socket de MQTT sin bloquear
     read_sockets, _, _ = select.select([mqtt_client.socket()], [], [], 1)
 
     if read_sockets:
-        mqtt_client.loop_read()  # Procesar mensaje MQTT si hay datos
+        mqtt_client.loop_read()
 
     try:
         topic, message = message_queue.get_nowait()
         influx_data = convert_to_influx(topic, message)
         
         if influx_data:
-            # Insertar en InfluxDB
             influx_client.write_points(influx_data)
             print(f"\nDatos insertados en InfluxDB: {influx_data}")
 
     except queue.Empty:
-        pass  # La cola está vacía, no hay mensajes nuevos
-
+        pass

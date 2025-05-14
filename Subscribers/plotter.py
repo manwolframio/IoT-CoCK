@@ -1,4 +1,5 @@
 import paho.mqtt.client as mqtt
+import ssl
 import queue
 import time
 import select
@@ -17,15 +18,29 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Configuración del broker MQTT
-MQTT_BROKER = "10.42.0.191"
-MQTT_PORT = 1883
+MQTT_BROKER = "127.0.0.1"
+MQTT_PORT = 8883  # Puerto TLS
+
 MQTT_TOPIC = "uci/patients/#"
+
+# Credenciales
+USERNAME = "iot"
+PASSWORD = "iot-user"
 
 # Cola para almacenar los mensajes MQTT
 message_queue = queue.Queue()
 
 # Configurar el cliente MQTT
 mqtt_client = mqtt.Client(client_id="Parser-Global")
+
+# Autenticación
+mqtt_client.username_pw_set(USERNAME, PASSWORD)
+
+# TLS cifrado sin verificar certificados (insecure)
+mqtt_client.tls_set(ca_certs=None, certfile=None, keyfile=None,
+                    cert_reqs=ssl.CERT_NONE,
+                    tls_version=ssl.PROTOCOL_TLS_CLIENT)
+mqtt_client.tls_insecure_set(True)
 
 # Función que maneja los mensajes recibidos
 def on_message(client, userdata, msg):
@@ -44,14 +59,13 @@ def start_mqtt():
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.subscribe(MQTT_TOPIC)
     mqtt_client.socket().setblocking(False)
-    print("Suscrito a MQTT")
+    print(f"Suscrito a MQTT con TLS (insecure) en {MQTT_BROKER}:{MQTT_PORT}")
 
 start_mqtt()
 
 # Función para parsear el mensaje
 def parse_message_data(topic, message):
     try:
-        # Topic: /uci/patients/<patient_id>/<sensor_measure>/<sensor_zone>/
         parts = topic.split("/")
         if len(parts) < 5:
             print(f"Topic inválido: {topic}")

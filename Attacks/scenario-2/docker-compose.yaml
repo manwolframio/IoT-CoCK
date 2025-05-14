@@ -1,0 +1,73 @@
+version: '3.9'
+
+services:
+  emqx:
+    image: emqx/emqx
+    container_name: emqx
+    restart: always
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8883:8883"
+      - "8084:8084"
+      - "18083:18083"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-logs:/opt/emqx/log
+      - ./certs:/opt/emqx/certs:ro
+    environment:
+      EMQX_NAME: emqx
+      EMQX_ALLOW_ANONYMOUS: "true"
+      EMQX_DASHBOARD__DEFAULT_USERNAME: "iot"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "iot"
+      EMQX_AUTH__USER__1__USERNAME: "iot-user"
+      EMQX_AUTH__USER__1__PASSWORD: "iot"
+      EMQX_LISTENER__SSL__EXTERNAL__ENABLE: "true"
+      EMQX_LISTENER__SSL__EXTERNAL__KEYFILE: "/opt/emqx/certs/key.pem"
+      EMQX_LISTENER__SSL__EXTERNAL__CERTFILE: "/opt/emqx/certs/cert.pem"
+    networks:
+      mi_red:
+        ipv4_address: 172.30.0.10
+
+  publisher:
+    build: ../mqtt-publisher
+    depends_on:
+      - emqx
+    environment:
+      MQTT_BROKER: 172.30.0.10
+      MQTT_PORT: 1883
+      PATIENT_ID: 001
+      MEASUREMENT_TYPE: temperature
+      MQTT_INTERVAL: 2
+    networks:
+      mi_red:
+    deploy:
+      replicas: 20
+
+  subscriber:
+    build: ../mqtt-subscriber
+    depends_on:
+      - emqx
+    environment:
+      MQTT_BROKER: 172.30.0.10
+      MQTT_PORT: 1883
+      MQTT_TOPIC: uci/patients/#
+    networks:
+      - mi_red
+    tty: true
+    stdin_open: true
+    deploy:
+      replicas: 1
+
+networks:
+  mi_red:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/22
+          gateway: 172.30.0.1
+
+volumes:
+  emqx-data:
+  emqx-logs:
+

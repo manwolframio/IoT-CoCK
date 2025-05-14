@@ -1,47 +1,56 @@
 import paho.mqtt.client as mqtt
-import json  # Importar el módulo json para procesar el payload como JSON
-# Dirección del broker y puerto
-BROKER_HOST = "192.168.188.236"  # IP del broker
-BROKER_PORT = 1883         # Puerto por defecto para MQTT
+import ssl
+import json
 
-# El ID del cliente
-CLIENT_ID = "CamaUCI:1"  # Cambia este ID a uno único
+# Configuración del broker TLS
+BROKER = "127.0.0.1"  # IP de tu broker
+PORT = 8883           # Puerto estándar para MQTT sobre TLS
 
-# Callback cuando el cliente se conecta
+# Credenciales de autenticación
+USERNAME = "iot"
+PASSWORD = "iot"
+
+# Identificadores
+PATIENT_ID = "002"
+SENSOR_ID = "001"
+MEASUREMENT = "heartrate"
+
+# Construcción del topic
+TOPIC = f"uci/patients/patient-{PATIENT_ID}/{MEASUREMENT}/sensor:{MEASUREMENT}:{SENSOR_ID}"
+
+# Callback para conexión
 def on_connect(client, userdata, flags, rc):
-    print("Conectado con código de resultado:", rc)
-    client.subscribe("uci/patients/patient-001/heartrate/sensor:heartrate:001")  # Se suscribe al tema 'sensor:heartrate:001/medida'
+    if rc == 0:
+        print("Conectado al broker MQTT con TLS (insecure)")
+        client.subscribe(TOPIC)
+        print(f"Suscrito al topic '{TOPIC}'")
+    else:
+        print(f"Fallo en la conexión: Código {rc}")
 
-# Callback cuando se recibe un mensaje
+# Callback para mensajes recibidos
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
     
     try:
-        # Intentamos cargar el payload como JSON
         payload_json = json.loads(msg.payload.decode())
-        
-        # Ahora imprimimos los campos específicos del JSON
-        print(payload_json)
+        print("Payload JSON:", payload_json)
     except json.JSONDecodeError:
-        # Si el mensaje no es un JSON válido, simplemente lo imprimimos como texto
         print("El payload no es un JSON válido.")
 
+# Inicializar cliente MQTT
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
 
-# Función principal para iniciar el nodo suscriptor
-def start_subscriber():
-    # Crear cliente MQTT con un ID personalizado
-    client = mqtt.Client(client_id=CLIENT_ID)
-    
-    # Asignar los callbacks
-    client.on_connect = on_connect
-    client.on_message = on_message
-    
-    # Conectar al broker
-    client.connect(BROKER_HOST, BROKER_PORT, 60)
+# Configurar autenticación
+client.username_pw_set(USERNAME, PASSWORD)
 
-    # Iniciar el loop para escuchar mensajes
-    print(f"Conectado al broker {BROKER_HOST}:{BROKER_PORT} con Client ID '{CLIENT_ID}' y esperando mensajes...")
-    client.loop_forever()
+# Configurar TLS sin verificar certificado (modo insecure)
+client.tls_set(ca_certs=None, certfile=None, keyfile=None, cert_reqs=ssl.CERT_NONE, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+client.tls_insecure_set(True)
 
-if __name__ == "__main__":
-    start_subscriber()
+# Conectar al broker
+client.connect(BROKER, PORT, 60)
+
+# Bucle para recibir mensajes
+client.loop_forever()
