@@ -5,7 +5,7 @@
 #define RST_PIN   4   // Reset del MFRC522
 #define SS_PIN    5   // SS (SDA) del MFRC522
 #define SCK_PIN   18  // Reloj SPI
-#define MOSI_PIN  23  // Datos hacia el MFRC522
+#define MOSI_PIN  2  // Datos hacia el MFRC522
 #define MISO_PIN  19  // Datos hacia el ESP32
 
 #define CAMA_START 1
@@ -15,7 +15,7 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 void setup() {
     Serial.begin(115200);
-    SPI.begin();
+    SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, SS_PIN);;
     mfrc522.PCD_Init();
     Serial.println("Acerca una tarjeta RFID para escribir los datos...");
 }

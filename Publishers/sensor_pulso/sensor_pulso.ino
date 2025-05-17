@@ -1,13 +1,12 @@
-#include "mqtt.h"
 #include <Adafruit_NeoPixel.h>  // Librería para LED direccionable
 #include "HeartSensor.h"
 
 // Configuración WiFi
-const char wifi_ssid[] = "LE-34";     
-const char wifi_password[] = "mpls1234";  
+const char wifi_ssid[] = "DIGIFIBRA-db7y";     
+const char wifi_password[] = "h23T3xfUzybU";  
 
 // Configuración MQTT
-const char mqtt_broker_address[] = "192.168.205.193";  
+const char mqtt_broker_address[] = "192.168.1.141";  
 const int mqtt_port = 1883;
 const char mqtt_client_id[] = "sensor:temperature:001";  
 

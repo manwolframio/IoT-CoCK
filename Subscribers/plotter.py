@@ -1,8 +1,6 @@
 import paho.mqtt.client as mqtt
 import ssl
 import queue
-import time
-import select
 import json
 import warnings
 import requests
@@ -18,9 +16,8 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Configuración del broker MQTT
-MQTT_BROKER = "127.0.0.1"
+MQTT_BROKER = "192.168.50.28"
 MQTT_PORT = 8883  # Puerto TLS
-
 MQTT_TOPIC = "uci/patients/#"
 
 # Credenciales
@@ -30,19 +27,19 @@ PASSWORD = "iot-user"
 # Cola para almacenar los mensajes MQTT
 message_queue = queue.Queue()
 
+# Estado de conexión
+is_connected = False
+is_subscribed = False
+
 # Configurar el cliente MQTT
 mqtt_client = mqtt.Client(client_id="Parser-Global")
-
-# Autenticación
 mqtt_client.username_pw_set(USERNAME, PASSWORD)
-
-# TLS cifrado sin verificar certificados (insecure)
 mqtt_client.tls_set(ca_certs=None, certfile=None, keyfile=None,
                     cert_reqs=ssl.CERT_NONE,
                     tls_version=ssl.PROTOCOL_TLS_CLIENT)
 mqtt_client.tls_insecure_set(True)
 
-# Función que maneja los mensajes recibidos
+# Callback al recibir mensaje
 def on_message(client, userdata, msg):
     try:
         topic = msg.topic
@@ -52,25 +49,45 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"Error procesando mensaje: {e}")
 
+# Callback al conectar
+def on_connect(client, userdata, flags, rc):
+    global is_connected, is_subscribed
+    if rc == 0:
+        print(f"Conexión exitosa a MQTT Broker: {MQTT_BROKER}")
+        is_connected = True
+        client.subscribe(MQTT_TOPIC)
+        is_subscribed = True
+        print(f"Suscrito a {MQTT_TOPIC}")
+    else:
+        print(f"Falló la conexión, código: {rc}")
+        is_connected = False
+        is_subscribed = False
+
+# Callback al desconectar
+def on_disconnect(client, userdata, rc):
+    global is_connected, is_subscribed
+    print("Desconectado de MQTT Broker")
+    is_connected = False
+    is_subscribed = False
+
+mqtt_client.on_connect = on_connect
+mqtt_client.on_disconnect = on_disconnect
 mqtt_client.on_message = on_message
 
-# Conectar al broker y suscribirse
 def start_mqtt():
-    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    mqtt_client.subscribe(MQTT_TOPIC)
-    mqtt_client.socket().setblocking(False)
-    print(f"Suscrito a MQTT con TLS (insecure) en {MQTT_BROKER}:{MQTT_PORT}")
+    try:
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        print(f"Intentando conexión inicial a {MQTT_BROKER}:{MQTT_PORT}...")
+    except Exception as e:
+        print(f"Error en conexión inicial: {e}")
 
-start_mqtt()
-
-# Función para parsear el mensaje
 def parse_message_data(topic, message):
     try:
         parts = topic.split("/")
         if len(parts) < 5:
             print(f"Topic inválido: {topic}")
             return None
-        
+
         patient_id = parts[2]
         sensor_measure = parts[3]
         sensor_zone = parts[4]
@@ -110,18 +127,51 @@ class MqttPlotter(QtWidgets.QMainWindow):
 
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
-        
         self.layout = QtWidgets.QVBoxLayout(self.central_widget)
+
+        # Etiqueta de estado
+        self.status_label = QtWidgets.QLabel("Estado MQTT: Desconectado")
+        self.status_label.setStyleSheet("color: red; font-size: 14pt;")
+        self.layout.addWidget(self.status_label)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.timer.start(1000)
 
+        # Comprobación de conexión
+        self.connection_checker = QTimer()
+        self.connection_checker.timeout.connect(self.check_connection)
+        self.connection_checker.start(5000)
+
+    def check_connection(self):
+        global is_connected, is_subscribed
+        if not is_connected:
+            print("MQTT no conectado, intentando reconectar...")
+            try:
+                mqtt_client.reconnect()
+            except Exception as e:
+                print(f"Error intentando reconectar: {e}")
+        elif not is_subscribed:
+            print("No suscrito, intentando re-suscripción...")
+            try:
+                mqtt_client.subscribe(MQTT_TOPIC)
+                is_subscribed = True
+            except Exception as e:
+                print(f"Error en re-suscripción: {e}")
+
+        # Actualizar etiqueta
+        if is_connected:
+            self.status_label.setText("Estado MQTT: Conectado")
+            self.status_label.setStyleSheet("color: green; font-size: 14pt;")
+        else:
+            self.status_label.setText("Estado MQTT: Desconectado")
+            self.status_label.setStyleSheet("color: red; font-size: 14pt;")
+
     def create_graph(self, topic):
         figure = Figure()
         canvas = FigureCanvas(figure)
         ax = figure.add_subplot(111)
-        
+
         graph_data = {
             'figure': figure,
             'canvas': canvas,
@@ -129,59 +179,57 @@ class MqttPlotter(QtWidgets.QMainWindow):
             'x_data': [],
             'y_data': []
         }
-        
+
         self.graphs[topic] = graph_data
         self.layout.addWidget(canvas)
 
     def update_plot(self):
-        try:
-            topic, message = message_queue.get_nowait()
+        while not message_queue.empty():
+            try:
+                topic, message = message_queue.get_nowait()
 
-            if topic not in self.graphs:
-                self.create_graph(topic)
+                if topic not in self.graphs:
+                    self.create_graph(topic)
 
-            parsed_data = parse_message_data(topic, message)
+                parsed_data = parse_message_data(topic, message)
 
-            if parsed_data:
-                graph_data = self.graphs[topic]
+                if parsed_data:
+                    graph_data = self.graphs[topic]
 
-                timestamp = parsed_data["timestamp"]
-                sensor_value = parsed_data["sensor_value"]
+                    timestamp = parsed_data["timestamp"]
+                    sensor_value = parsed_data["sensor_value"]
 
-                graph_data['x_data'].append(timestamp)
-                graph_data['y_data'].append(sensor_value)
+                    graph_data['x_data'].append(timestamp)
+                    graph_data['y_data'].append(sensor_value)
 
-                if len(graph_data['x_data']) > 12:
-                    graph_data['x_data'] = graph_data['x_data'][-12:]
-                    graph_data['y_data'] = graph_data['y_data'][-12:]
+                    if len(graph_data['x_data']) > 12:
+                        graph_data['x_data'] = graph_data['x_data'][-12:]
+                        graph_data['y_data'] = graph_data['y_data'][-12:]
 
-                ax = graph_data['ax']
-                ax.clear()
+                    ax = graph_data['ax']
+                    ax.clear()
 
-                ax.plot(graph_data['x_data'], graph_data['y_data'], linewidth=6)
+                    ax.plot(graph_data['x_data'], graph_data['y_data'], linewidth=2)
 
-                ax.set_xlabel('Timestamp', fontsize=36)
-                ax.set_ylabel('Measurement', fontsize=36)
-                ax.set_title(f'Real-time Sensor Data ({topic})', fontsize=36)
+                    ax.set_xlabel('Timestamp', fontsize=10)
+                    ax.set_ylabel('Measurement', fontsize=10)
+                    ax.set_title(f'Real-time Sensor Data ({topic})', fontsize=12)
 
-                plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=36)
-                plt.setp(ax.get_yticklabels(), fontsize=36)
+                    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
+                    plt.setp(ax.get_yticklabels(), fontsize=8)
 
-                ax.grid(True)
-                graph_data['canvas'].draw()
+                    ax.grid(True)
+                    graph_data['figure'].tight_layout()
+                    graph_data['canvas'].draw()
 
-        except queue.Empty:
-            pass  # No hay mensajes nuevos
+            except Exception as e:
+                print(f"Error actualizando gráfico: {e}")
 
+# Inicio
 app = QtWidgets.QApplication([])
 window = MqttPlotter()
 window.show()
 
-# Bucle principal no bloqueante
-while True:
-    read_sockets, _, _ = select.select([mqtt_client.socket()], [], [], 1)
-
-    if read_sockets:
-        mqtt_client.loop_read()
-
-    app.processEvents()
+start_mqtt()
+mqtt_client.loop_start()
+app.exec_()

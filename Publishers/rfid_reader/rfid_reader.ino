@@ -1,46 +1,45 @@
 #include <SPI.h>
 #include <MFRC522.h>
-#include "rfidReader.h"  // Incluir las funciones RFID modularizadas
+#include "rfidReader.h"
 
-#define RST_PIN   4   // Reset del MFRC522
-#define SS_PIN    5   // SS (SDA) del MFRC522
-#define SCK_PIN   18  // Reloj SPI
-#define MOSI_PIN  23  // Datos hacia el MFRC522
-#define MISO_PIN  19  // Datos hacia el ESP32
+#define RST_PIN   4
+#define SS_PIN    5
+#define SCK_PIN   18
+#define MOSI_PIN  2
+#define MISO_PIN  19
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 void setup() {
     Serial.begin(115200);
-    SPI.begin();
+    SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, SS_PIN);
     mfrc522.PCD_Init();
     Serial.println("Acerca una tarjeta RFID para leerla");
-  
 }
 
 void loop() {
+    byte block = 4;
+    byte buffer[18];
+    byte bufferSize = sizeof(buffer);
 
-  byte block = 4;
-  byte buffer[18];
-  byte bufferSize = sizeof(buffer);
-  
-  MFRC522::MIFARE_Key key;
-  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;  // Clave predeterminada
+    MFRC522::MIFARE_Key key;
+    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
-  while (1){
-    if(detect_rfid(mfrc522) >=1 && read_card_serial(mfrc522)>=1){    
-      // Autenticación para la lectura
-      if (auth_rfid(mfrc522, block, key)) {
-        // Leer los datos del bloque
-        if (read_rfid_data(mfrc522, block, buffer, bufferSize)) {
-          Serial.print("Datos leídos: ");
-          Serial.write(buffer, 16);
-          Serial.println();
-        }
-      }
-      // Finalizar comunicación con la tarjeta
-      stop_rfid(mfrc522);
-      delay(500);
+    // Llama a la función que espera hasta detectar una tarjeta y procesa una vez
+    int result = process_rfid_wait_for_card(mfrc522, block, buffer, bufferSize, key);
+
+    // Según el resultado, puedes decidir qué hacer (opcional)
+    if (result == 1) {
+        Serial.println("Lectura correcta.");
+        Serial.print("Datos leídos: ");
+        Serial.write(buffer, 16);
+        Serial.println();
+    } else if (result == -1) {
+        Serial.println("Lectura fallida.");
+    } else if (result == -2) {
+        Serial.println("Error de autenticación.");
     }
-  }
+
+    // Esperar un tiempo antes de volver a esperar otra tarjeta
+    delay(1000);
 }

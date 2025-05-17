@@ -1,8 +1,5 @@
 #include "mqtt.h"
 
-// =========================
-// ORIGINAL SIN TLS
-// =========================
 int connect_to_mqtt(MQTTClient &mqtt, const char* client_id, const char* broker_address, int port, WiFiClient& net) {
     mqtt.begin(broker_address, port, net);
     Serial.print("ESP32 - Conectando a MQTT");
@@ -41,7 +38,7 @@ void send_to_mqtt(MQTTClient &mqtt, const char* patient_id, const char* measurem
     Serial.println("Estado serializado:");
 
     char topic[200];
-    sprintf(topic, "uci/patients/patient-%s/%s/1", patient_id, measurement);
+    sprintf(topic, "uci/patients/%s/%s/1", patient_id, measurement);
 
     mqtt.publish(topic, msg_buffer);
     Serial.println("ESP32 - Datos enviados a MQTT:");
@@ -89,7 +86,7 @@ void send_to_mqtt_TLS(MQTTClient &mqtt, const char* patient_id, const char* meas
     Serial.println("Estado serializado (TLS):");
 
     char topic[200];
-    sprintf(topic, "uci/patients/patient-%s/%s/1", patient_id, measurement);
+    sprintf(topic, "uci/patients/%s/%s/1", patient_id, measurement);
 
     mqtt.publish(topic, msg_buffer);
     Serial.println("ESP32 - Datos enviados a MQTT (TLS):");
